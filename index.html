@@ -1,0 +1,650 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>手绘风格图表生成器</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{--bg:#1a1a2e;--panel:#16213e;--card:#0f3460;--accent:#e94560;--text:#eee;--text2:#aab;--border:#2a2a4a;--input:#0d1b2a}
+body{font-family:'Segoe UI',system-ui,-apple-system,sans-serif;background:var(--bg);color:var(--text);min-height:100vh;display:flex;flex-direction:column}
+.topbar{background:var(--panel);border-bottom:1px solid var(--border);padding:12px 24px;display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.topbar h1{font-size:1.3rem;margin-right:20px;white-space:nowrap}
+.topbar h1 span{color:var(--accent)}
+.chart-types{display:flex;gap:8px;flex-wrap:wrap}
+.chart-types button{background:var(--card);border:2px solid var(--border);color:var(--text);padding:8px 16px;border-radius:8px;cursor:pointer;font-size:.9rem;transition:.2s}
+.chart-types button:hover{border-color:var(--accent)}
+.chart-types button.active{background:var(--accent);border-color:var(--accent);color:#fff}
+.main{display:flex;flex:1;overflow:hidden}
+.left-panel{width:380px;min-width:320px;background:var(--panel);border-right:1px solid var(--border);overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:14px}
+.section{background:var(--card);border-radius:10px;padding:14px}
+.section h3{font-size:.95rem;margin-bottom:10px;color:var(--accent);display:flex;align-items:center;gap:6px}
+.section label{font-size:.85rem;color:var(--text2);display:block;margin-bottom:4px;margin-top:8px}
+.section label:first-of-type{margin-top:0}
+input[type="text"],input[type="number"],textarea,select{width:100%;background:var(--input);border:1px solid var(--border);color:var(--text);padding:8px 10px;border-radius:6px;font-size:.85rem;font-family:inherit}
+textarea{resize:vertical;min-height:80px}
+select{cursor:pointer}
+.preset-btns{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}
+.preset-btns button{background:var(--input);border:1px solid var(--border);color:var(--text2);padding:5px 10px;border-radius:6px;cursor:pointer;font-size:.8rem;transition:.2s}
+.preset-btns button:hover{border-color:var(--accent);color:var(--text)}
+.palette-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-top:6px}
+.palette-opt{display:flex;align-items:center;gap:6px;padding:6px 8px;border-radius:6px;cursor:pointer;border:2px solid transparent;background:var(--input);transition:.2s}
+.palette-opt:hover,.palette-opt.active{border-color:var(--accent)}
+.palette-opt .colors{display:flex;gap:2px}
+.palette-opt .colors span{width:14px;height:14px;border-radius:3px;display:inline-block}
+.right-panel{flex:1;display:flex;flex-direction:column;overflow:hidden}
+.chart-area{flex:1;display:flex;align-items:center;justify-content:center;padding:20px;overflow:auto}
+.chart-area canvas{max-width:100%;max-height:100%;border-radius:12px;background:#1a1a2e}
+.export-bar{background:var(--panel);border-top:1px solid var(--border);padding:12px 24px;display:flex;gap:10px;justify-content:center;flex-wrap:wrap}
+.export-bar button{background:var(--accent);border:none;color:#fff;padding:10px 24px;border-radius:8px;cursor:pointer;font-size:.9rem;font-weight:600;transition:.2s}
+.export-bar button:hover{opacity:.85;transform:translateY(-1px)}
+.export-bar button.secondary{background:var(--card);border:1px solid var(--border)}
+.check-row{display:flex;align-items:center;gap:8px;margin-top:6px}
+.check-row input[type="checkbox"]{accent-color:var(--accent)}
+@media(max-width:800px){.main{flex-direction:column}.left-panel{width:100%;min-width:0;max-height:45vh}}
+.custom-colors{display:flex;gap:4px;flex-wrap:wrap;margin-top:6px}
+.custom-colors input[type="color"]{width:32px;height:28px;border:none;border-radius:4px;cursor:pointer;background:none;padding:0}
+</style>
+</head>
+<body>
+<div class="topbar">
+  <h1>✏️ <span>手绘图表</span>生成器</h1>
+  <div class="chart-types" id="chartTypes">
+    <button class="active" data-type="bar">📊 柱状图</button>
+    <button data-type="line">📈 折线图</button>
+    <button data-type="pie">🥧 饼图</button>
+    <button data-type="donut">🍩 环形图</button>
+    <button data-type="scatter">⚬ 散点图</button>
+  </div>
+</div>
+<div class="main">
+  <div class="left-panel">
+    <div class="section">
+      <h3>📋 数据预设</h3>
+      <div class="preset-btns" id="presetBtns">
+        <button onclick="loadPreset('sales')">月度销售额</button>
+        <button onclick="loadPreset('temp')">气温数据</button>
+        <button onclick="loadPreset('score')">考试成绩</button>
+        <button onclick="loadPreset('fruit')">水果销量</button>
+        <button onclick="loadPreset('scatter1')">身高体重</button>
+      </div>
+    </div>
+    <div class="section">
+      <h3>📝 数据输入</h3>
+      <label>标签（逗号分隔）</label>
+      <input type="text" id="dataLabels" placeholder="例如: 一月,二月,三月,四月">
+      <label>数值（逗号分隔）</label>
+      <input type="text" id="dataValues" placeholder="例如: 120,230,180,310">
+      <div id="scatterInput" style="display:none">
+        <label>散点数据 X（逗号分隔）</label>
+        <input type="text" id="scatterX" placeholder="例如: 160,165,170,175,180">
+        <label>散点数据 Y（逗号分隔）</label>
+        <input type="text" id="scatterY" placeholder="例如: 50,55,60,65,70">
+      </div>
+      <button class="preset-btns" style="margin-top:10px"><button onclick="applyData()" style="background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600">应用数据</button></button>
+    </div>
+    <div class="section">
+      <h3>🎨 配色方案</h3>
+      <div class="palette-grid" id="paletteGrid"></div>
+      <div class="check-row"><input type="checkbox" id="useCustom" onchange="toggleCustom()"><label style="margin:0" for="useCustom">自定义颜色</label></div>
+      <div class="custom-colors" id="customColors" style="display:none">
+        <input type="color" value="#e94560"><input type="color" value="#0f3460"><input type="color" value="#533483">
+        <input type="color" value="#00b4d8"><input type="color" value="#06d6a0"><input type="color" value="#ffd166">
+      </div>
+    </div>
+    <div class="section">
+      <h3>⚙️ 图表设置</h3>
+      <label>图表标题</label>
+      <input type="text" id="chartTitle" value="月度销售额统计" oninput="renderChart()">
+      <label>X 轴标签</label>
+      <input type="text" id="xLabel" value="" oninput="renderChart()" placeholder="X轴">
+      <label>Y 轴标签</label>
+      <input type="text" id="yLabel" value="" oninput="renderChart()" placeholder="Y轴">
+      <label>手绘粗细</label>
+      <input type="range" id="roughness" min="1" max="5" value="3" oninput="renderChart()" style="accent-color:var(--accent);width:100%">
+      <div class="check-row"><input type="checkbox" id="showGrid" checked onchange="renderChart()"><label for="showGrid" style="margin:0">显示网格</label></div>
+      <div class="check-row"><input type="checkbox" id="showValues" checked onchange="renderChart()"><label for="showValues" style="margin:0">显示数值</label></div>
+    </div>
+  </div>
+  <div class="right-panel">
+    <div class="chart-area"><canvas id="chart"></canvas></div>
+    <div class="export-bar">
+      <button onclick="exportPNG()">📥 导出 PNG</button>
+      <button onclick="exportSVG()">📥 导出 SVG</button>
+      <button class="secondary" onclick="randomize()">🎲 随机抖动</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const PALETTES = [
+  {name:'糖果',colors:['#e94560','#0f3460','#533483','#00b4d8','#06d6a0','#ffd166']},
+  {name:'海洋',colors:['#0077b6','#00b4d8','#90e0ef','#caf0f8','#023e8a','#48cae4']},
+  {name:'森林',colors:['#2d6a4f','#40916c','#52b788','#74c69d','#95d5b2','#b7e4c7']},
+  {name:'夕阳',colors:['#ff6b6b','#ffa06b','#ffd56b','#6bfff0','#6bd4ff','#a06bff']},
+  {name:'暗夜',colors:['#e94560','#533483','#0f3460','#16213e','#1a1a2e','#2a2a4a']},
+  {name:'活力',colors:['#f72585','#b5179e','#7209b7','#560bad','#480ca8','#3a0ca3']},
+  {name:'暖阳',colors:['#ff9f1c','#ffbf69','#cbf3f0','#2ec4b6','#e71d36','#ff477e']},
+  {name:'极简',colors:['#ef476f','#ffd166','#06d6a0','#118ab2','#073b4c','#8d99ae']},
+  {name:'紫色',colors:['#7400b8','#6930c3','#5e60ce','#5390d9','#4ea8de','#48bfe3']},
+];
+
+const PRESETS = {
+  sales: {labels:'一月,二月,三月,四月,五月,六月',values:'120,230,180,310,270,350',title:'月度销售额统计'},
+  temp: {labels:'1月,2月,3月,4月,5月,6月,7月,8月,9月,10月,11月,12月',values:'2,5,12,18,24,30,33,32,26,18,10,4',title:'月均气温变化（°C）'},
+  score: {labels:'语文,数学,英语,物理,化学,生物',values:'85,92,78,88,76,90',title:'期末考试成绩'},
+  fruit: {labels:'苹果,香蕉,橙子,葡萄,西瓜,草莓',values:'45,38,25,30,52,20',title:'水果月销量（箱）'},
+  scatter1: {labels:'',values:'',title:'身高-体重分布',sx:'155,160,162,165,168,170,172,175,178,180,185',sy:'45,50,52,55,58,62,65,68,72,75,80'},
+};
+
+let chartType = 'bar';
+let seed = Math.random() * 1000;
+
+// Canvas setup
+const canvas = document.getElementById('chart');
+const ctx = canvas.getContext('2d');
+let W, H;
+
+function resizeCanvas() {
+  const area = canvas.parentElement;
+  const dpr = window.devicePixelRatio || 1;
+  W = Math.min(800, area.clientWidth - 40);
+  H = Math.min(550, area.clientHeight - 40);
+  canvas.width = W * dpr;
+  canvas.height = H * dpr;
+  canvas.style.width = W + 'px';
+  canvas.style.height = H + 'px';
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+}
+
+// Seeded random for reproducibility
+function seededRandom(s) {
+  let x = Math.sin(s) * 10000;
+  return x - Math.floor(x);
+}
+let seedCounter = 0;
+function rr(roughness) {
+  seedCounter++;
+  return (seededRandom(seed + seedCounter) - 0.5) * roughness * 2.5;
+}
+
+// Rough drawing primitives
+function roughLine(x1, y1, x2, y2, roughness) {
+  const r = roughness * 1.5;
+  ctx.beginPath();
+  ctx.moveTo(x1 + rr(roughness), y1 + rr(roughness));
+  // Add midpoint perturbation
+  const mx = (x1 + x2) / 2 + rr(roughness) * 1.5;
+  const my = (y1 + y2) / 2 + rr(roughness) * 1.5;
+  ctx.quadraticCurveTo(mx, my, x2 + rr(roughness), y2 + rr(roughness));
+  ctx.stroke();
+  // Double stroke for sketchy feel
+  if (roughness > 1) {
+    ctx.beginPath();
+    ctx.moveTo(x1 + rr(roughness) * 0.5, y1 + rr(roughness) * 0.5);
+    ctx.quadraticCurveTo(mx + rr(roughness), my + rr(roughness), x2 + rr(roughness) * 0.5, y2 + rr(roughness) * 0.5);
+    ctx.stroke();
+  }
+}
+
+function roughRect(x, y, w, h, roughness) {
+  const r = roughness * 1.2;
+  ctx.beginPath();
+  ctx.moveTo(x + rr(r), y + rr(r));
+  ctx.lineTo(x + w + rr(r), y + rr(r));
+  ctx.lineTo(x + w + rr(r), y + h + rr(r));
+  ctx.lineTo(x + rr(r), y + h + rr(r));
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+}
+
+function roughEllipse(cx, cy, rx, ry, roughness, startAngle, endAngle) {
+  const r = roughness * 1.5;
+  const steps = 60;
+  const sa = startAngle || 0;
+  const ea = endAngle || Math.PI * 2;
+  ctx.beginPath();
+  for (let i = 0; i <= steps; i++) {
+    const a = sa + (ea - sa) * i / steps;
+    const px = cx + (rx + rr(r)) * Math.cos(a);
+    const py = cy + (ry + rr(r)) * Math.sin(a);
+    if (i === 0) ctx.moveTo(px, py);
+    else ctx.lineTo(px, py);
+  }
+  if (!startAngle && !endAngle) ctx.closePath();
+}
+
+function roughCircle(cx, cy, radius, roughness) {
+  roughEllipse(cx, cy, radius, radius, roughness);
+}
+
+// Get current palette colors
+function getColors() {
+  if (document.getElementById('useCustom').checked) {
+    return Array.from(document.querySelectorAll('#customColors input')).map(i => i.value);
+  }
+  const active = document.querySelector('.palette-opt.active');
+  if (active) return JSON.parse(active.dataset.colors);
+  return PALETTES[0].colors;
+}
+
+function getData() {
+  const labels = document.getElementById('dataLabels').value.split(',').map(s => s.trim()).filter(Boolean);
+  const values = document.getElementById('dataValues').value.split(',').map(s => parseFloat(s.trim())).filter(n => !isNaN(n));
+  return { labels, values };
+}
+
+function getScatterData() {
+  const x = document.getElementById('scatterX').value.split(',').map(s => parseFloat(s.trim())).filter(n => !isNaN(n));
+  const y = document.getElementById('scatterY').value.split(',').map(s => parseFloat(s.trim())).filter(n => !isNaN(n));
+  return { x, y };
+}
+
+// Main render
+function renderChart() {
+  resizeCanvas();
+  seedCounter = 0;
+  const R = parseInt(document.getElementById('roughness').value);
+  const title = document.getElementById('chartTitle').value;
+  const xLabel = document.getElementById('xLabel').value;
+  const yLabel = document.getElementById('yLabel').value;
+  const showGrid = document.getElementById('showGrid').checked;
+  const showValues = document.getElementById('showValues').checked;
+  const colors = getColors();
+
+  ctx.clearRect(0, 0, W, H);
+
+  const margin = {top: 60, right: 30, bottom: 60, left: 60};
+  const cw = W - margin.left - margin.right;
+  const ch = H - margin.top - margin.bottom;
+
+  // Title
+  if (title) {
+    ctx.fillStyle = '#eee';
+    ctx.font = 'bold 18px "Segoe UI", sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(title, W / 2, 32);
+  }
+
+  ctx.save();
+  ctx.translate(margin.left, margin.top);
+
+  if (chartType === 'scatter') {
+    drawScatter(cw, ch, R, showGrid, showValues, colors, xLabel, yLabel);
+  } else if (chartType === 'pie' || chartType === 'donut') {
+    drawPie(cw, ch, R, colors, chartType === 'donut');
+  } else if (chartType === 'line') {
+    drawLine(cw, ch, R, showGrid, showValues, colors, xLabel, yLabel);
+  } else {
+    drawBar(cw, ch, R, showGrid, showValues, colors, xLabel, yLabel);
+  }
+
+  ctx.restore();
+}
+
+function drawAxes(cw, ch, R, xLabel, yLabel) {
+  ctx.strokeStyle = '#aab';
+  ctx.lineWidth = 2;
+  roughLine(0, ch, cw, ch, R * 0.5);
+  roughLine(0, 0, 0, ch, R * 0.5);
+
+  if (xLabel) {
+    ctx.fillStyle = '#aab';
+    ctx.font = '13px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(xLabel, cw / 2, ch + 45);
+  }
+  if (yLabel) {
+    ctx.save();
+    ctx.translate(-42, ch / 2);
+    ctx.rotate(-Math.PI / 2);
+    ctx.textAlign = 'center';
+    ctx.fillText(yLabel, 0, 0);
+    ctx.restore();
+  }
+}
+
+function drawGridLines(cw, ch, steps, maxVal, R) {
+  ctx.strokeStyle = '#2a2a4a';
+  ctx.lineWidth = 0.8;
+  ctx.fillStyle = '#888';
+  ctx.font = '11px sans-serif';
+  ctx.textAlign = 'right';
+  for (let i = 0; i <= steps; i++) {
+    const y = ch - (ch * i / steps);
+    const val = Math.round(maxVal * i / steps);
+    roughLine(0, y, cw, y, R * 0.3);
+    ctx.fillText(val, -8, y + 4);
+  }
+}
+
+function drawBar(cw, ch, R, showGrid, showValues, colors, xLabel, yLabel) {
+  const {labels, values} = getData();
+  if (!labels.length || !values.length) return;
+  const n = Math.min(labels.length, values.length);
+  const maxVal = Math.max(...values) * 1.15;
+  const barW = cw / n * 0.6;
+  const gap = cw / n;
+
+  drawAxes(cw, ch, R, xLabel, yLabel);
+  if (showGrid) drawGridLines(cw, ch, 5, maxVal, R);
+
+  for (let i = 0; i < n; i++) {
+    const bh = (values[i] / maxVal) * ch;
+    const x = gap * i + (gap - barW) / 2;
+    const y = ch - bh;
+    ctx.fillStyle = colors[i % colors.length] + 'cc';
+    ctx.strokeStyle = colors[i % colors.length];
+    ctx.lineWidth = 2;
+    roughRect(x, y, barW, bh, R);
+
+    ctx.fillStyle = '#eee';
+    ctx.font = '12px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(labels[i], x + barW / 2, ch + 20);
+    if (showValues) {
+      ctx.fillText(values[i], x + barW / 2, y - 8);
+    }
+  }
+}
+
+function drawLine(cw, ch, R, showGrid, showValues, colors, xLabel, yLabel) {
+  const {labels, values} = getData();
+  if (!labels.length || !values.length) return;
+  const n = Math.min(labels.length, values.length);
+  const maxVal = Math.max(...values) * 1.15;
+  const gap = cw / (n - 1 || 1);
+
+  drawAxes(cw, ch, R, xLabel, yLabel);
+  if (showGrid) drawGridLines(cw, ch, 5, maxVal, R);
+
+  const points = [];
+  for (let i = 0; i < n; i++) {
+    points.push({x: gap * i, y: ch - (values[i] / maxVal) * ch});
+  }
+
+  // Draw line with rough style
+  ctx.strokeStyle = colors[0];
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  for (let i = 0; i < points.length; i++) {
+    const p = points[i];
+    const jitterX = rr(R) * 0.8;
+    const jitterY = rr(R) * 0.8;
+    if (i === 0) ctx.moveTo(p.x + jitterX, p.y + jitterY);
+    else {
+      const prev = points[i - 1];
+      const cpx = (prev.x + p.x) / 2 + rr(R);
+      const cpy = (prev.y + p.y) / 2 + rr(R);
+      ctx.quadraticCurveTo(cpx, cpy, p.x + jitterX, p.y + jitterY);
+    }
+  }
+  ctx.stroke();
+  // Double stroke
+  ctx.globalAlpha = 0.4;
+  ctx.beginPath();
+  for (let i = 0; i < points.length; i++) {
+    const p = points[i];
+    if (i === 0) ctx.moveTo(p.x + rr(R), p.y + rr(R));
+    else {
+      const prev = points[i - 1];
+      ctx.quadraticCurveTo((prev.x + p.x) / 2 + rr(R), (prev.y + p.y) / 2 + rr(R), p.x + rr(R), p.y + rr(R));
+    }
+  }
+  ctx.stroke();
+  ctx.globalAlpha = 1;
+
+  // Points
+  for (let i = 0; i < n; i++) {
+    const p = points[i];
+    ctx.fillStyle = '#fff';
+    ctx.strokeStyle = colors[0];
+    ctx.lineWidth = 2.5;
+    roughCircle(p.x, p.y, 5, R * 0.5);
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.fillStyle = '#eee';
+    ctx.font = '12px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(labels[i], p.x, ch + 20);
+    if (showValues) ctx.fillText(values[i], p.x, p.y - 12);
+  }
+}
+
+function drawPie(cw, ch, R, colors, isDonut) {
+  const {labels, values} = getData();
+  if (!labels.length || !values.length) return;
+  const n = Math.min(labels.length, values.length);
+  const total = values.slice(0, n).reduce((a, b) => a + b, 0);
+  const cx = cw / 2;
+  const cy = ch / 2;
+  const radius = Math.min(cw, ch) / 2 - 40;
+
+  let angle = -Math.PI / 2;
+  for (let i = 0; i < n; i++) {
+    const sliceAngle = (values[i] / total) * Math.PI * 2;
+    ctx.fillStyle = colors[i % colors.length] + 'cc';
+    ctx.strokeStyle = colors[i % colors.length];
+    ctx.lineWidth = 2.5;
+
+    // Draw slice
+    const r = R * 1.5;
+    const steps = 40;
+    ctx.beginPath();
+    ctx.moveTo(cx + rr(r), cy + rr(r));
+    for (let j = 0; j <= steps; j++) {
+      const a = angle + sliceAngle * j / steps;
+      const px = cx + (radius + rr(r)) * Math.cos(a);
+      const py = cy + (radius + rr(r)) * Math.sin(a);
+      ctx.lineTo(px, py);
+    }
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+
+    // Label
+    const midAngle = angle + sliceAngle / 2;
+    const lx = cx + (radius * 0.65) * Math.cos(midAngle);
+    const ly = cy + (radius * 0.65) * Math.sin(midAngle);
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 12px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    const pct = Math.round(values[i] / total * 100);
+    ctx.fillText(pct + '%', lx, ly);
+
+    // Legend
+    const lgx = cw - 110;
+    const lgy = 10 + i * 22;
+    ctx.fillStyle = colors[i % colors.length];
+    ctx.fillRect(lgx, lgy, 14, 14);
+    ctx.strokeStyle = '#aaa';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(lgx, lgy, 14, 14);
+    ctx.fillStyle = '#eee';
+    ctx.font = '12px sans-serif';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'top';
+    ctx.fillText(labels[i], lgx + 20, lgy + 1);
+
+    angle += sliceAngle;
+  }
+
+  // Donut hole
+  if (isDonut) {
+    ctx.fillStyle = '#1a1a2e';
+    ctx.strokeStyle = '#1a1a2e';
+    ctx.lineWidth = 3;
+    roughCircle(cx, cy, radius * 0.45, R * 0.5);
+    ctx.fill();
+    ctx.stroke();
+  }
+}
+
+function drawScatter(cw, ch, R, showGrid, showValues, colors, xLabel, yLabel) {
+  const sd = getScatterData();
+  const n = Math.min(sd.x.length, sd.y.length);
+  if (!n) return;
+  const maxX = Math.max(...sd.x) * 1.1;
+  const maxY = Math.max(...sd.y) * 1.1;
+  const minX = Math.min(...sd.x) * 0.9;
+  const minY = Math.min(...sd.y) * 0.9;
+
+  // Axes
+  ctx.strokeStyle = '#aab';
+  ctx.lineWidth = 2;
+  roughLine(0, ch, cw, ch, R * 0.5);
+  roughLine(0, 0, 0, ch, R * 0.5);
+
+  if (xLabel) {
+    ctx.fillStyle = '#aab'; ctx.font = '13px sans-serif'; ctx.textAlign = 'center';
+    ctx.fillText(xLabel, cw / 2, ch + 45);
+  }
+  if (yLabel) {
+    ctx.save(); ctx.translate(-42, ch / 2); ctx.rotate(-Math.PI / 2);
+    ctx.textAlign = 'center'; ctx.fillText(yLabel, 0, 0); ctx.restore();
+  }
+
+  // Grid
+  if (showGrid) {
+    ctx.strokeStyle = '#2a2a4a';
+    ctx.lineWidth = 0.8;
+    ctx.fillStyle = '#888';
+    ctx.font = '11px sans-serif';
+    for (let i = 0; i <= 5; i++) {
+      const y = ch - ch * i / 5;
+      const val = Math.round((minY + (maxY - minY) * i / 5) * 10) / 10;
+      roughLine(0, y, cw, y, R * 0.3);
+      ctx.textAlign = 'right';
+      ctx.fillText(val, -8, y + 4);
+    }
+    for (let i = 0; i <= 5; i++) {
+      const x = cw * i / 5;
+      const val = Math.round((minX + (maxX - minX) * i / 5) * 10) / 10;
+      roughLine(x, ch, x, 0, R * 0.3);
+      ctx.textAlign = 'center';
+      ctx.fillText(val, x, ch + 18);
+    }
+  }
+
+  // Points
+  for (let i = 0; i < n; i++) {
+    const px = ((sd.x[i] - minX) / (maxX - minX)) * cw;
+    const py = ch - ((sd.y[i] - minY) / (maxY - minY)) * ch;
+    ctx.fillStyle = colors[i % colors.length] + 'cc';
+    ctx.strokeStyle = colors[i % colors.length];
+    ctx.lineWidth = 2;
+    roughCircle(px + rr(R), py + rr(R), 7 + Math.random() * 3, R * 0.7);
+    ctx.fill();
+    ctx.stroke();
+
+    if (showValues) {
+      ctx.fillStyle = '#ccc';
+      ctx.font = '10px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText(`(${sd.x[i]},${sd.y[i]})`, px, py - 14);
+    }
+  }
+}
+
+// Palette UI
+function buildPalettes() {
+  const grid = document.getElementById('paletteGrid');
+  PALETTES.forEach((p, i) => {
+    const div = document.createElement('div');
+    div.className = 'palette-opt' + (i === 0 ? ' active' : '');
+    div.dataset.colors = JSON.stringify(p.colors);
+    div.innerHTML = `<span style="font-size:.75rem">${p.name}</span><div class="colors">${p.colors.slice(0, 4).map(c => `<span style="background:${c}"></span>`).join('')}</div>`;
+    div.onclick = () => {
+      document.querySelectorAll('.palette-opt').forEach(e => e.classList.remove('active'));
+      div.classList.add('active');
+      renderChart();
+    };
+    grid.appendChild(div);
+  });
+}
+
+function toggleCustom() {
+  document.getElementById('customColors').style.display = document.getElementById('useCustom').checked ? 'flex' : 'none';
+  renderChart();
+}
+
+document.querySelectorAll('#customColors input').forEach(i => i.oninput = renderChart);
+
+// Chart type buttons
+document.querySelectorAll('.chart-types button').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.chart-types button').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    chartType = btn.dataset.type;
+    document.getElementById('scatterInput').style.display = chartType === 'scatter' ? 'block' : 'none';
+    renderChart();
+  });
+});
+
+function loadPreset(name) {
+  const p = PRESETS[name];
+  document.getElementById('dataLabels').value = p.labels;
+  document.getElementById('dataValues').value = p.values;
+  document.getElementById('chartTitle').value = p.title;
+  if (p.sx) {
+    document.getElementById('scatterX').value = p.sx;
+    document.getElementById('scatterY').value = p.sy;
+    chartType = 'scatter';
+    document.querySelectorAll('.chart-types button').forEach(b => {
+      b.classList.toggle('active', b.dataset.type === 'scatter');
+    });
+    document.getElementById('scatterInput').style.display = 'block';
+  }
+  renderChart();
+}
+
+function applyData() { renderChart(); }
+function randomize() { seed = Math.random() * 10000; renderChart(); }
+
+// Export PNG
+function exportPNG() {
+  const dpr = window.devicePixelRatio || 1;
+  const tempCanvas = document.createElement('canvas');
+  tempCanvas.width = canvas.width;
+  tempCanvas.height = canvas.height;
+  const tc = tempCanvas.getContext('2d');
+  tc.fillStyle = '#1a1a2e';
+  tc.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
+  tc.drawImage(canvas, 0, 0);
+  const link = document.createElement('a');
+  link.download = '手绘图表.png';
+  link.href = tempCanvas.toDataURL('image/png');
+  link.click();
+}
+
+// Export SVG (re-render to SVG via canvas2svg-like approach - simplified)
+function exportSVG() {
+  // Create SVG string from current canvas
+  const dataURL = canvas.toDataURL('image/png');
+  const title = document.getElementById('chartTitle').value || '手绘图表';
+  const svgStr = `<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">
+  <rect width="100%" height="100%" fill="#1a1a2e"/>
+  <image href="${dataURL}" width="${W}" height="${H}"/>
+  <text x="${W/2}" y="32" text-anchor="middle" fill="#eee" font-size="18" font-weight="bold" font-family="sans-serif">${title}</text>
+</svg>`;
+  const blob = new Blob([svgStr], {type: 'image/svg+xml'});
+  const link = document.createElement('a');
+  link.download = '手绘图表.svg';
+  link.href = URL.createObjectURL(blob);
+  link.click();
+  URL.revokeObjectURL(link.href);
+}
+
+// Init
+buildPalettes();
+document.getElementById('dataLabels').value = '一月,二月,三月,四月,五月,六月';
+document.getElementById('dataValues').value = '120,230,180,310,270,350';
+window.addEventListener('resize', renderChart);
+renderChart();
+</script>
+</body>
+</html>
